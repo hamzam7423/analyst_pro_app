@@ -1,0 +1,7 @@
+Full Name,DOB,Email ,Department, Salary 
+Alice Smith,01/12/1985,alice.smith@example.com,IT,55000
+Bob Jones,12/05/1990,bob.jones@example.com,Finance,72000
+Charlie Lee,not known,CHARLIE.LEE@EXAMPLE.COM,HR,
+Dana  Miller,03/03/1982,dana.miller@example.com,,40000
+Eve Brown,07/15/1975,eve.brown@example.com,Finance,85000
+Frank Miller,11/22/1988,frank.miller@example.com,IT,NaN

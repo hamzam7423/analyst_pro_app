@@ -1,0 +1,7 @@
+OrderID,Product ,Region,Quantity,Order Date,UnitPrice
+O100,Widget A,North,10,2024/02/01,25.50
+O101,Widget B,South,five,02-02-2024,40.00
+O102,Widget C,East,7,2024-02-05,30.25
+O103,Widget A,West,NaN,07/02/2024,22.00
+O104,Widget B,North,15,2024/02/09,35.00
+O105,Widget C,South,20,11-02-2024,45.00

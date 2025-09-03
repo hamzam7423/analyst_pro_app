@@ -141,14 +141,24 @@ def apply_plan(df: pd.DataFrame, plan: dict):
             if col in df.columns:
                 df[col] = df[col].fillna(val)
 
-    if "deduplicate" in plan and isinstance(plan["deduplicate"], dict):
-        subset = plan["deduplicate"].get("subset", None)
-        keep = plan["deduplicate"].get("keep", "first")
-        if subset:
-            keep = keep if keep in ("first", "last") else "first"
+  if "deduplicate" in plan and isinstance(plan["deduplicate"], dict):
+    subset = plan["deduplicate"].get("subset", None)
+    keep = plan["deduplicate"].get("keep", "first")
+
+    # ✅ Remove empty strings from the subset
+    if subset:
+        subset = [col for col in subset if col.strip() != '']
+
+    # ✅ Proceed only if subset is not empty and valid
+    if subset:
+        keep = keep if keep in ("first", "last") else "first"
+        if all(col in df.columns for col in subset):
             df = df.drop_duplicates(subset=subset, keep=keep)
         else:
-            df = df.drop_duplicates()
+            st.warning("⚠️ Some columns in the deduplication plan don't exist in the DataFrame. Skipping deduplication.")
+    else:
+        df = df.drop_duplicates()
+
 
     if "filters" in plan and isinstance(plan["filters"], list):
         df = apply_filters(df, plan["filters"])

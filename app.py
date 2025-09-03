@@ -167,6 +167,11 @@ def apply_plan(df: pd.DataFrame, plan: dict):
         spec = plan["separate_headings"]
         df = safe_split(df, spec.get("from_column"), spec.get("targets", []), spec.get("delimiter", ";"))
 
+    #Auto-fi: force numeric for common financial columns
+    for c in df.columns:
+        if any(k in c.lower() for k in ["revenue", "amount", "price", "total"]):
+            df[c] = pd.to_numeric(df[c], errors="coerce"),fillna(0)
+
     return df
 
 def default_clean(df: pd.DataFrame) -> pd.DataFrame:

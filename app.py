@@ -400,6 +400,11 @@ with tab_chart:
         st.info("Apply cleaning first.")
     else:
         df = st.session_state.cleaned.copy()
+      #Debug block to show column name & types
+      with st.expander("columns & types (debug)"):
+          st.write(df.dtypes.astype(str))
+          st.dataframe(df.head(10))
+        
         cats = [c for c in df.columns if df[c].dtype == object or pd.api.types.is_categorical_dtype(df[c])]
         nums = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
         dts  = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]

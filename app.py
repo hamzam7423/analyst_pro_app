@@ -313,56 +313,55 @@ with tab_clean:
 
 # ---- ANALYZE TAB
 with tab_analyze:
-    st.subheader("Data profiling & filters")
-    if st.session_state.cleaned is None:
-        st.info("Apply cleaning first.")
-    else:
-        df = st.session_state.cleaned.copy()
-      with st.expander("coloumns & types (debug)"):
-          st.write(df.dtypes.astypes(str))
-          st.dataframe(df.head(10))
-        with st.expander("Filters"):
-            cats = [c for c in df.columns if df[c].dtype == object or pd.api.types.is_categorical_dtype(df[c])]
-            nums = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-            dts  = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
-
-            for c in cats[:5]:
-                opts = ["<All>"] + sorted(df[c].astype(str).dropna().unique().tolist())[:1000]
-                choice = st.selectbox(f"{c}", opts, key=f"f_{c}")
-                if choice != "<All>":
-                    df = df[df[c].astype(str) == choice]
-
-            if dts:
-                dtc = st.selectbox("Date column (optional)", ["<None>"] + dts, index=0)
-                if dtc != "<None>":
-                    min_d, max_d = df[dtc].min(), df[dtc].max()
-                    dr = st.slider("Date range",
-                                   min_value=min_d.to_pydatetime() if hasattr(min_d, 'to_pydatetime') else min_d,
-                                   max_value=max_d.to_pydatetime() if hasattr(max_d, 'to_pydatetime') else max_d,
-                                   value=(min_d, max_d))
-                    df = df[(df[dtc] >= dr[0]) & (df[dtc] <= dr[1])]
-
-        st.markdown("### Summary")
-        st.write(f"Rows: {len(df)}  |  Columns: {len(df.columns)}")
-        with st.expander("Numeric describe"):
-            import numpy as np  # Make sure this is at the top of your script
-
-# Step-by-step handling
-if df.empty:
-    st.warning("⚠️ The DataFrame is empty. Nothing to describe.")
+st.subheader("Data profiling & filters")
+if st.session_state.cleaned is None:
+st.info("Apply cleaning first.")
 else:
-    numeric_df = df.select_dtypes(include=[np.number])
-    if numeric_df.empty:
-        st.warning("⚠️ No numeric data available to describe.")
-    else:
-        st.dataframe(numeric_df.describe().transpose())
+df = st.session_state.cleaned.copy()
 
-        with st.expander("Missing values by column"):
-            miss = df.isna().sum().to_frame("missing_count")
-            miss["missing_pct"] = (miss["missing_count"] / len(df) * 100).round(2)
-            st.dataframe(miss.sort_values("missing_count", ascending=False))
+# 🔎 Debug: see columns + types + a quick peek at rows
+with st.expander("🔎 Columns & types (debug)"):
+st.write(df.dtypes.astype(str))
+st.dataframe(df.head(10))
 
-       # ---------- Robust Pivot Builder (auto-detect numerics even if text) ----------
+# ---------- Filters (optional) ----------
+with st.expander("Filters"):
+# Categorical filters (first 5 to keep UI tidy)
+cats = [c for c in df.columns if df[c].dtype == object or pd.api.types.is_categorical_dtype(df[c])]
+nums = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+dts = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
+
+for c in cats[:5]:
+opts = ["<All>"] + sorted(df[c].astype(str).dropna().unique().tolist())[:1000]
+choice = st.selectbox(f"{c}", opts, key=f"f_{c}")
+if choice != "<All>":
+df = df[df[c].astype(str) == choice]
+
+if dts:
+dtc = st.selectbox("Date column (optional)", ["<None>"] + dts, index=0)
+if dtc != "<None>":
+min_d, max_d = df[dtc].min(), df[dtc].max()
+dr = st.slider(
+"Date range",
+min_value=min_d.to_pydatetime() if hasattr(min_d, 'to_pydatetime') else min_d,
+max_value=max_d.to_pydatetime() if hasattr(max_d, 'to_pydatetime') else max_d,
+value=(min_d, max_d),
+)
+df = df[(df[dtc] >= dr[0]) & (df[dtc] <= dr[1])]
+
+# ---------- Summary ----------
+st.markdown("### Summary")
+st.write(f"Rows: {len(df)} | Columns: {len(df.columns)}")
+
+with st.expander("Numeric describe"):
+st.dataframe(df.describe(include=[np.number]).transpose())
+
+with st.expander("Missing values by column"):
+miss = df.isna().sum().to_frame("missing_count")
+miss["missing_pct"] = (miss["missing_count"] / len(df) * 100).round(2)
+st.dataframe(miss.sort_values("missing_count", ascending=False))
+
+# ---------- Robust Pivot Builder (auto-detect numerics even if text) ----------
 st.markdown("### Pivot builder")
 
 # Try to coerce any column that looks numeric (even if dtype=object)
@@ -379,8 +378,12 @@ numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
 categorical_cols = [c for c in df.columns if c not in numeric_cols]
 
 if not numeric_cols:
-st.warning("No numeric columns detected for pivots. Check the debug expander above to verify column names/types. "
-"If your revenue column is named something like 'Revenue($)', rename it to 'revenue' in the Clean tab.")
+st.warning(
+"No numeric columns detected for pivots. "
+"Open the debug expander above to verify column names/types. "
+"If your revenue column is named something like 'Revenue($)', "
+"rename it to 'revenue' in the Clean tab or include it in your plan."
+)
 else:
 group_col = st.selectbox("Group by (category)", ["<None>"] + categorical_cols, index=0)
 if group_col != "<None>":
@@ -393,29 +396,31 @@ st.dataframe(pv.head(200))
 if agg in ("sum", "count"):
 pct = (pv[metric] / pv[metric].sum() * 100).round(2)
 st.write("Percent of total:")
-st.dataframe(
-pv.assign(pct_total=pct).head(200)
-)
-        if dts and nums:
-            st.markdown("### Time series resample")
-            dtcol = st.selectbox("Date/Time column", dts, key="ts_dt")
-            ts_metric = st.selectbox("Metric", nums, key="ts_metric")
-            freq = st.selectbox("Frequency", ["D","W","M"], index=2)
-            method = st.selectbox("Aggregation", ["sum","mean","median","count","max","min"], index=0)
-            ts = df[[dtcol, ts_metric]].dropna().set_index(dtcol).sort_index()
-            if method == "sum":
-                res = ts.resample(freq).sum()
-            elif method == "mean":
-                res = ts.resample(freq).mean()
-            elif method == "median":
-                res = ts.resample(freq).median()
-            elif method == "count":
-                res = ts.resample(freq).count()
-            elif method == "max":
-                res = ts.resample(freq).max()
-            else:
-                res = ts.resample(freq).min()
-            st.dataframe(res.head(100))
+st.dataframe(pv.assign(pct_total=pct).head(200))
+
+# ---------- Time-series resample ----------
+dts = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
+nums = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+if dts and nums:
+st.markdown("### Time series resample")
+dtcol = st.selectbox("Date/Time column", dts, key="ts_dt")
+ts_metric = st.selectbox("Metric", nums, key="ts_metric")
+freq = st.selectbox("Frequency", ["D", "W", "M"], index=2)
+method = st.selectbox("Aggregation", ["sum", "mean", "median", "count", "max", "min"], index=0)
+ts = df[[dtcol, ts_metric]].dropna().set_index(dtcol).sort_index()
+if method == "sum":
+res = ts.resample(freq).sum()
+elif method == "mean":
+res = ts.resample(freq).mean()
+elif method == "median":
+res = ts.resample(freq).median()
+elif method == "count":
+res = ts.resample(freq).count()
+elif method == "max":
+res = ts.resample(freq).max()
+else:
+res = ts.resample(freq).min()
+st.dataframe(res.head(100))
 
 # ---- CHARTS TAB
 with tab_chart:

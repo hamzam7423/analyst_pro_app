@@ -318,6 +318,9 @@ with tab_analyze:
         st.info("Apply cleaning first.")
     else:
         df = st.session_state.cleaned.copy()
+      with st.expander("coloumns & types (debug)"):
+          st.write(df.dtypes.astypes(str))
+          st.dataframe(df.head(10))
         with st.expander("Filters"):
             cats = [c for c in df.columns if df[c].dtype == object or pd.api.types.is_categorical_dtype(df[c])]
             nums = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
@@ -359,19 +362,40 @@ else:
             miss["missing_pct"] = (miss["missing_count"] / len(df) * 100).round(2)
             st.dataframe(miss.sort_values("missing_count", ascending=False))
 
-        st.markdown("### Pivot builder")
-        nums = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-        group_col = st.selectbox("Group by (category)", ["<None>"] + [c for c in df.columns if c not in nums], index=0)
-        if group_col != "<None>" and nums:
-            metric = st.selectbox("Metric", nums)
-            agg = st.selectbox("Aggregation", ["sum","mean","median","count","max","min"], index=0)
-            pv = df.groupby(group_col)[metric].agg(agg).reset_index().sort_values(metric, ascending=False)
-            st.dataframe(pv.head(100))
-            pot = (pv[metric] / pv[metric].sum() * 100).round(2)
-            st.write("Percent of total (top rows):")
-            st.dataframe(pd.DataFrame({group_col: pv[group_col], f"{metric}_{agg}": pv[metric], "pct_total": pot}).head(100))
+       # ---------- Robust Pivot Builder (auto-detect numerics even if text) ----------
+st.markdown("### Pivot builder")
 
-        dts  = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
+# Try to coerce any column that looks numeric (even if dtype=object)
+auto_numeric_cols = []
+for c in df.columns:
+s = pd.to_numeric(df[c], errors="coerce")
+# treat as numeric if at least 60% of values convert
+if s.notna().sum() >= max(1, int(0.6 * len(s))):
+df[c] = s # overwrite with numeric series
+auto_numeric_cols.append(c)
+
+# Categorical = everything else (non-numeric)
+numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+categorical_cols = [c for c in df.columns if c not in numeric_cols]
+
+if not numeric_cols:
+st.warning("No numeric columns detected for pivots. Check the debug expander above to verify column names/types. "
+"If your revenue column is named something like 'Revenue($)', rename it to 'revenue' in the Clean tab.")
+else:
+group_col = st.selectbox("Group by (category)", ["<None>"] + categorical_cols, index=0)
+if group_col != "<None>":
+metric = st.selectbox("Numeric metric", numeric_cols)
+agg = st.selectbox("Aggregation", ["sum", "mean", "median", "count", "max", "min"], index=0)
+pv = df.groupby(group_col, dropna=False)[metric].agg(agg).reset_index().sort_values(metric, ascending=False)
+st.dataframe(pv.head(200))
+
+# Percent of total
+if agg in ("sum", "count"):
+pct = (pv[metric] / pv[metric].sum() * 100).round(2)
+st.write("Percent of total:")
+st.dataframe(
+pv.assign(pct_total=pct).head(200)
+)
         if dts and nums:
             st.markdown("### Time series resample")
             dtcol = st.selectbox("Date/Time column", dts, key="ts_dt")

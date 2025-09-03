@@ -337,7 +337,17 @@ with tab_analyze:
         st.markdown("### Summary")
         st.write(f"Rows: {len(df)}  |  Columns: {len(df.columns)}")
         with st.expander("Numeric describe"):
-            st.dataframe(df.describe(include=[np.number]).transpose())
+            import numpy as np  # Make sure this is at the top of your script
+
+# Step-by-step handling
+if df.empty:
+    st.warning("⚠️ The DataFrame is empty. Nothing to describe.")
+else:
+    numeric_df = df.select_dtypes(include=[np.number])
+    if numeric_df.empty:
+        st.warning("⚠️ No numeric data available to describe.")
+    else:
+        st.dataframe(numeric_df.describe().transpose())
 
         with st.expander("Missing values by column"):
             miss = df.isna().sum().to_frame("missing_count")

@@ -196,6 +196,9 @@ with st.sidebar:
     st.header("1) Upload")
     file = st.file_uploader("CSV or Excel", type=["csv","xlsx"])
     multi_files = st.file_uploader("Batch files (optional)", type=["csv","xlsx"], accept_multiple_files=True)
+  # Toggle to control batch mode
+batch_enabled = st.checkbox("Enable batch mode", value=False)
+st.session_state["batch_enabled"] = batch_enabled
     st.header("2) LLM Planning (optional)")
     use_llm = st.checkbox("Use local LLM via Ollama", value=True)
     instructions = st.text_area("Describe cleaning you'd like")
@@ -239,77 +242,126 @@ if save_plan_clicked:
 
 # ---- CLEAN TAB
 with tab_clean:
-    st.subheader("Preview")
-    if st.session_state.orig is not None:
-        st.dataframe(st.session_state.orig.head(50))
-    else:
-        st.info("Upload a file to begin.")
+st.subheader("Preview")
+if st.session_state.orig is not None:
+st.dataframe(st.session_state.orig.head(50))
+else:
+st.info("Upload a file to begin.")
 
-    plan = None
-    if st.session_state.orig is not None and use_llm and instructions.strip():
-        with st.spinner("Asking local LLM for a cleaning plan..."):
-            plan = call_ollama_get_plan(instructions, columns_hint=list(st.session_state.orig.columns))
+# Ask LLM for a plan (optional)
+plan = None
+if st.session_state.orig is not None and use_llm and instructions.strip():
+with st.spinner("Asking local LLM for a cleaning plan..."):
+plan = call_ollama_get_plan(instructions, columns_hint=list(st.session_state.orig.columns))
 
-    st.markdown("### Manual Recipe (optional)")
-    with st.expander("Build a quick recipe"):
-        rename_pairs = st.text_area("Rename (old:new per line)", placeholder="cust id:customer_id\n Date :date")
-        drop_cols = st.text_input("Drop columns (comma-separated)")
-        std_mode = st.selectbox("Standardize case", ["skip","lower","upper","title"], index=0)
-        std_cols = st.text_input("Columns to standardize (comma-separated)")
-        parse_cols = st.text_input("Parse dates (comma-separated)")
-        parse_fmt = st.text_input("Date format (e.g., %Y-%m-%d or infer)", value="infer")
-        fill_defaults = st.text_area("Fill missing defaults (col=value per line)", placeholder="age=0\nemail=")
-        dedup_subset = st.text_input("Deduplicate subset (comma-separated)")
-        dedup_keep = st.selectbox("Deduplicate keep", ["first","last"])
+# ----- Manual Recipe Builder -----
+st.markdown("### Manual Recipe (optional)")
+with st.expander("Build a quick recipe"):
+rename_pairs = st.text_area("Rename (old:new per line)", placeholder="Company Name :company\nRevenue($):revenue\n Date :date\nInvoice_ID:invoice_id")
+drop_cols = st.text_input("Drop columns (comma-separated)")
+std_mode = st.selectbox("Standardize case", ["skip","lower","upper","title"], index=0)
+std_cols = st.text_input("Columns to standardize (comma-separated)")
+parse_cols = st.text_input("Parse dates (comma-separated)")
+parse_fmt = st.text_input("Date format (e.g., %Y-%m-%d or infer)", value="infer")
+fill_defaults = st.text_area("Fill missing defaults (col=value per line)", placeholder="revenue=0.0")
+dedup_subset = st.text_input("Deduplicate subset (comma-separated)", placeholder="invoice_id")
+dedup_keep = st.selectbox("Deduplicate keep", ["first","last"])
 
-        manual = {}
-        if rename_pairs.strip():
-            ren = {}
-            for line in rename_pairs.splitlines():
-                if ":" in line:
-                    a,b = line.split(":",1); ren[a.strip()] = b.strip()
-            if ren: manual["rename"] = ren
-        if drop_cols.strip():
-            manual["drop_columns"] = [c.strip() for c in drop_cols.split(",") if c.strip()]
-        if std_mode != "skip" and std_cols.strip():
-            manual["standardize_case"] = {"columns": [c.strip() for c in std_cols.split(",")], "mode": std_mode}
-        if parse_cols.strip():
-            manual["parse_dates"] = {"columns": [c.strip() for c in parse_cols.split(",")], "format": parse_fmt.strip() or "infer"}
-        if fill_defaults.strip():
-            cd = {}
-            for line in fill_defaults.splitlines():
-                if "=" in line:
-                    c,v = line.split("=",1); cd[c.strip()] = v
-            manual["fillna"] = {"column_defaults": cd}
-        if dedup_subset.strip():
-            manual["deduplicate"] = {"subset": [c.strip() for c in dedup_subset.split(",")], "keep": dedup_keep}
+manual = {}
+if rename_pairs.strip():
+ren = {}
+for line in rename_pairs.splitlines():
+if ":" in line:
+a,b = line.split(":",1); ren[a.strip()] = b.strip()
+if ren: manual["rename"] = ren
+if drop_cols.strip():
+manual["drop_columns"] = [c.strip() for c in drop_cols.split(",") if c.strip()]
+if std_mode != "skip" and std_cols.strip():
+manual["standardize_case"] = {"columns": [c.strip() for c in std_cols.split(",")], "mode": std_mode}
+if parse_cols.strip():
+manual["parse_dates"] = {"columns": [c.strip() for c in parse_cols.split(",")], "format": parse_fmt.strip() or "infer"}
+if fill_defaults.strip():
+cd = {}
+for line in fill_defaults.splitlines():
+if "=" in line:
+c,v = line.split("=",1); cd[c.strip()] = v
+manual["fillna"] = {"column_defaults": cd}
+if dedup_subset.strip():
+manual["deduplicate"] = {"subset": [c.strip() for c in dedup_subset.split(",")], "keep": dedup_keep}
 
-    if plan and manual:
-        plan.update(manual)
-    elif manual:
-        plan = manual
+# Combine LLM plan + Manual (manual takes precedence)
+if plan and manual:
+plan.update(manual)
+elif manual:
+plan = manual
 
-    if plan:
-        st.session_state.plan = plan
-        st.markdown("**Current Plan**")
-        st.code(json.dumps(plan, indent=2), language="json")
+if plan:
+st.session_state.plan = plan
+st.markdown("**Current Plan**")
+st.code(json.dumps(plan, indent=2), language="json")
 
-    if st.button("Apply cleaning"):
-        if st.session_state.orig is not None:
-            cleaned = apply_plan(st.session_state.orig.copy(), st.session_state.plan) if st.session_state.plan else default_clean(st.session_state.orig.copy())
-            st.session_state.cleaned = cleaned
-            st.success("Cleaning applied.")
-        else:
-            st.warning("Upload a file first.")
+# ----- Apply cleaning to the single uploaded file -----
+if st.button("Apply cleaning"):
+if st.session_state.orig is not None:
+cleaned = apply_plan(st.session_state.orig.copy(), st.session_state.plan) if st.session_state.plan else default_clean(st.session_state.orig.copy())
+st.session_state.cleaned = cleaned
+st.success("Cleaning applied.")
+else:
+st.warning("Upload a file first.")
 
-    if st.session_state.cleaned is not None:
-        st.subheader("Cleaned preview")
-        st.dataframe(st.session_state.cleaned.head(50))
+if st.session_state.cleaned is not None:
+st.subheader("Cleaned preview")
+st.dataframe(st.session_state.cleaned.head(50))
 
-    st.markdown("---")
-    st.subheader("Batch apply plan to multiple files")
-    multi_files = st.session_state.get("multi_files", None)
-    # (Handled via sidebar uploader in practice—download buttons produced per file after apply.)
+# ---------------- Batch mode (only if enabled) ----------------
+st.markdown("---")
+st.subheader("Batch apply plan to multiple files")
+
+# Read toggle from sidebar (we set st.session_state['batch_enabled'] there)
+batch_enabled = st.session_state.get("batch_enabled", False)
+
+if not batch_enabled:
+st.caption("Batch mode is disabled (toggle it ON in the sidebar to use).")
+else:
+if not st.session_state.plan:
+st.warning("Define a cleaning plan first (LLM or Manual Recipe) to enable batch.")
+elif not multi_files:
+st.info("Upload one or more files in the sidebar under 'Batch files (optional)'.")
+else:
+if st.button("Run batch"):
+processed_any = False
+for uf in multi_files:
+try:
+# Load each file
+if uf.name.lower().endswith(".csv"):
+dfb = pd.read_csv(uf)
+elif uf.name.lower().endswith(".xlsx"):
+dfb = pd.read_excel(uf)
+else:
+st.warning(f"Skipping {uf.name}: unsupported extension.")
+continue
+
+if dfb is None or dfb.empty:
+st.warning(f"Skipping {uf.name}: empty or unreadable.")
+continue
+
+# Apply current plan
+out_df = apply_plan(dfb, st.session_state.plan)
+
+# Offer per-file download
+st.download_button(
+label=f"Download cleaned_{uf.name.rsplit('.',1)[0]}.csv",
+data=out_df.to_csv(index=False).encode("utf-8"),
+file_name=f"cleaned_{uf.name.rsplit('.',1)[0]}.csv",
+mime="text/csv",
+key=f"dl_{uf.name}"
+)
+processed_any = True
+except Exception as e:
+st.error(f"Failed on {uf.name}: {e}")
+
+if not processed_any:
+st.info("No valid files processed. Check columns and try again.")
 
 # ---- ANALYZE TAB
 with tab_analyze:
